@@ -193,6 +193,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         // Handle time and date commands directly on the phone.
         val localAnswer = when {
+            parseAlarmCommand(input) != null -> {
+                parseAlarmCommand(input)!!
+            }
+
             parseVolumeCommand(input) != null -> {
                 parseVolumeCommand(input)!!
             }
@@ -436,6 +440,47 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun parseAlarmCommand(input: String): String? {
+        val text = input.lowercase(Locale.getDefault())
+            .replace(Regex("[^\\p{L}\\p{N}:\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val alarmKeywords = listOf(
+            "alarm", "wake me up", "wake me"
+        )
+
+        if (!alarmKeywords.any { text.contains(it) }) {
+            return null
+        }
+
+        val match = Regex(
+            """\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b"""
+        ).find(text) ?: return "What time should I set the alarm for?"
+
+        var hour = match.groupValues[1].toIntOrNull() ?: return null
+        val minute = match.groupValues[2].takeIf { it.isNotEmpty() }
+            ?.toIntOrNull() ?: 0
+        val period = match.groupValues[3]
+
+        if (minute !in 0..59) {
+            return "Please provide a valid minute between 0 and 59."
+        }
+
+        if (period.isNotEmpty()) {
+            if (hour !in 1..12) {
+                return "Please provide a valid 12-hour time."
+            }
+
+            if (period == "pm" && hour != 12) hour += 12
+            if (period == "am" && hour == 12) hour = 0
+        } else if (hour !in 0..23) {
+            return "Please provide a valid time."
+        }
+
+        return setAlarm(hour, minute)
+    }
+
     private fun parseFlashlightCommand(input: String): Boolean? {
         val text = input.lowercase(Locale.getDefault())
             .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
@@ -557,6 +602,27 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 setMediaVolume(target, false)
             }
             else -> null
+        }
+    }
+
+    private fun setAlarm(hour: Int, minute: Int): String {
+        val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+            putExtra(AlarmClock.EXTRA_HOUR, hour)
+            putExtra(AlarmClock.EXTRA_MINUTES, minute)
+            putExtra(AlarmClock.EXTRA_MESSAGE, "Tony alarm")
+        }
+
+        return try {
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                "Opening the clock app to set an alarm for ${
+                    String.format(Locale.getDefault(), "%02d:%02d", hour, minute)
+                }."
+            } else {
+                "I couldn't find an alarm app on this phone."
+            }
+        } catch (_: Exception) {
+            "I couldn't open the alarm app."
         }
     }
 
